@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Memory House</title>
+<style>
+body{margin:0;background:#0b1a17;color:white;font-family:Arial;overflow:hidden}
+#ui{position:fixed;top:10px;left:10px;background:rgba(0,0,0,.6);padding:10px;border-radius:8px;z-index:10}
+#chat{margin-top:5px;width:180px}
+canvas{display:block}
+</style>
+</head>
+
+<body>
+
+<div id="ui">
+  <b>🏠 Memory House</b><br><br>
+  <input id="room" placeholder="Room"><br><br>
+  <button onclick="join()">Join</button><br><br>
+
+  <input id="chat" placeholder="Say something…" 
+    onkeydown="if(event.key==='Enter')sendChat()"><br><br>
+
+  <input type="file" id="music" accept="audio/*">
+  <audio id="player" controls></audio><br><br>
+
+  <button onclick="toggleNight()">🌙 Toggle Night</button>
+</div>
+
+<canvas id="game"></canvas>
+
+<script src="/socket.io/socket.io.js"></script>
+<script>
+const socket = io();
+let room,myId,night=false;
+const players={}, chats=[];
+let me={x:200,y:300};
+
+const canvas=document.getElementById("game");
+const ctx=canvas.getContext("2d");
+canvas.width=innerWidth;canvas.height=innerHeight;
+
+function join(){
+  room=document.getElementById("room").value||"default";
+  socket.emit("join-room",room);
+}
+
+socket.on("connect",()=>myId=socket.id);
+socket.on("state",s=>Object.assign(players,s.players));
+socket.on("player-joined",d=>players[d.id]=d.player);
+socket.on("player-left",id=>delete players[id]);
+socket.on("player-move",d=>{
+  if(players[d.id]){players[d.id].x=d.x;players[d.id].y=d.y;}
+});
+
+socket.on("chat",d=>{
+  chats.push({id:d.id,msg:d.msg,time:Date.now()});
+});
+
+socket.on("music",d=>{
+  if(d.action==="play"){audio.play()}
+  if(d.action==="pause"){audio.pause()}
+});
+
+const keys={};
+onkeydown=e=>keys[e.key]=true;
+onkeyup=e=>keys[e.key]=false;
+
+function move(){
+  if(!room)return;
+  if(keys.ArrowUp)me.y-=3;
+  if(keys.ArrowDown)me.y+=3;
+  if(keys.ArrowLeft)me.x-=3;
+  if(keys.ArrowRight)me.x+=3;
+  socket.emit("move",{room,x:me.x,y:me.y});
+}
+
+function sendChat(){
+  const i=document.getElementById("chat");
+  if(i.value){socket.emit("chat",{room,msg:i.value});i.value="";}
+}
+
+const audio=document.getElementById("player");
+document.getElementById("music").onchange=e=>{
+  audio.src=URL.createObjectURL(e.target.files[0]);
+  audio.play();
+  socket.emit("music",{room,action:"play"});
+};
+
+audio.onpause=()=>socket.emit("music",{room,action:"pause"});
+
+function toggleNight(){night=!night}
+
+let birdX=0, riverOffset=0;
+
+function draw(){
+  move();
+
+  ctx.fillStyle=night?"#06110f":"#2e7d32";
+  ctx.fillRect(0,0,canvas.width,canvas.height);
+
+  riverOffset+=1;
+  ctx.fillStyle="#4fc3f7";
+  ctx.fillRect(0,canvas.height-120+Math.sin(riverOffset/10)*5,canvas.width,100);
+
+  ctx.fillStyle="#8d6e63";
+  ctx.fillRect(canvas.width/2-150,canvas.height/2-100,300,200);
+
+  birdX+=2;
+  ctx.fillStyle="white";
+  ctx.beginPath();
+  ctx.arc(birdX%canvas.width,80,4,0,Math.PI*2);
+  ctx.fill();
+
+  for(const id in players){
+    ctx.fillStyle=id===myId?"cyan":"pink";
+    ctx.beginPath();
+    ctx.arc(players[id].x,players[id].y,10,0,Math.PI*2);
+    ctx.fill();
+  }
+
+  chats.forEach((c,i)=>{
+    if(Date.now()-c.time<4000){
+      const p=players[c.id];
+      if(p){
+        ctx.fillStyle="white";
+        ctx.fillText(c.msg,p.x-10,p.y-15);
+      }
+    }
+  });
+
+  requestAnimationFrame(draw);
+}
+draw();
+
+onresize=()=>{canvas.width=innerWidth;canvas.height=innerHeight;}
+</script>
+</body>
+</html>
